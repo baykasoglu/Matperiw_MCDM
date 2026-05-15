@@ -15,6 +15,7 @@
 #
 # Author idea: Prof. Dr. Adil Baykasoğlu
 # Extended version: holacratic MATPERIW-MCDM implementation
+# 15.05.2026
 # ============================================================
 
 from __future__ import annotations
@@ -736,5 +737,5 @@ if __name__ == "__main__":
     #   Main  |        | C1,C2,C3
     #   C1    | Main   | C11,C12
     #   C2    | Main   | C21,C22
-    #   C3    | Main   | C31,C32,C33
+    #   C3    | Main   | C31,C32,C33  
     pass
