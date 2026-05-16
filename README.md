@@ -17,7 +17,7 @@ the system **automatically handles the entire workflow** and **ranks the alterna
 
 ## Quick start
 
-Install dependencies (see `USER_MANUAL.md` for the full list), prepare an `.xlsx` input as described there, then run:
+Install dependencies (see `USER_MANUAL` for the full list), prepare an `.xlsx` input as described there, then run:
 
 ```bash
 python RUN_matperiw_MCDM_holacratic.py
