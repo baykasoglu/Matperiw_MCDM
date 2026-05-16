@@ -1,0 +1,263 @@
+# Holacratic MATPERIW-MCDM : User Manual
+
+**Version context:** Code dated May 16, 2026 (see source header).  
+**Author (method / code): Prof. Dr. Adil Baykasoğlu © (as noted in `MATPERIW_HOLACRATIC.py`).
+
+This project implements **Holacratic MATPERIW-MCDM**: a hierarchical (holacratic) multi-criteria decision-making method that combines **subjective AHP weights**, 
+**objective entropy weights**, **normalization** of direct performance data, and **matrix permanents** to produce a global score and ranking of alternatives.
+
+---
+
+## 1. What the software does
+
+- Reads a decision problem from an Excel workbook: hierarchy of nodes, alternatives, pairwise comparisons (AHP), and decision matrices for raw criteria.
+- Evaluates holons *bottom-up*: child holons are evaluated first; their permanent scores become criterion values for the parent holon (propagated criteria).
+- Distinguishes two kinds of criteria at every holon:
+  - Raw / direct:* values come from a `DM_<Holon>` sheet. These are *sum-normalized* (benefit/cost) and multiplied by *entropy weights* on the diagonal before permanents.
+  - Propagated:* values are *permanent scores* from child holons. They are *not* re-normalized or entropy-weighted again.
+- Outputs *console summary, an *Excel results workbook*, and optionally a *bar chart* of the final ranking.
+
+---
+
+## 2. Files in this package
+
+| File | Role |
+|------|------|
+| MATPERIW_HOLACRATIC.py | Core library: Excel reader, holacratic model, MATPERIW math, export, plotting. |
+| RUN_matperiw_MCDM_holacratic.py | Example script: points to an input workbook, runs the model, exports results, shows the chart. |
+
+---
+
+## 3. System requirements and installation
+
+### 3.1 Python
+
+Use *Python 3.10+* (recommended; code uses union types like `str | Path`).
+
+### 3.2 Dependencies
+
+The following packages are imported by the code (install with `pip` as needed):
+
+- numpy
+- pandas
+- matplotlib
+- sympy (for the *permanent* of each alternative's matrix)
+- openpyxl (Excel read/write via pandas)
+- crispyn (entropy weighting and sum normalization: weighting_methods)
+- pyDecision (AHP: ahp_method)
+
+Example:
+
+```bash
+pip install numpy pandas matplotlib sympy openpyxl crispyn pyDecision
+```
+
+There is no bundled `requirements.txt` in the repository; the list above matches the imports in `MATPERIW_HOLACRATIC.py`.
+
+---
+
+## 4. Preparing the input Excel workbook
+
+Use `.xlsx` (Excel 2007+) format; the code uses pandas with the openpyxl engine.
+
+### 4.1 Required sheet: `Structure`
+
+Defines the *holon tree* and each holon's *local criteria* (order matters for AHP and aggregation).
+
+| Column | Description |
+|--------|-------------|
+| Holon | Name of the holon (e.g. `Main`, `C1`). |
+| Parent | Parent holon name, or *empty* for exactly *one root*. |
+| Criteria | Comma- or semicolon-separated list of criterion names for this holon. |
+
+*Rules:*
+
+- There must be *exactly one root*: one row with *empty* `Parent` (blank or whitespace-only is treated as no parent).
+- If a name in `Criteria` is also a *holon* whose `Parent` is the current holon, it is treated as a *child holon*: scores are *propagated* from that child.
+- Otherwise, the criterion must appear as a column in *DM_<Holon>* for that holon.
+
+**Example (conceptual):**
+
+| Holon | Parent | Criteria |
+|-------|--------|----------|
+| Main | | C1, C2, C3 |
+| C1 | Main | C11, C12 |
+| C2 | Main | C21, C22 |
+
+Here `C1`, `C2`, `C3` on `Main` would typically refer to child holons named `C1`, `C2`, `C3` if those rows exist; leaf holons need `DM_C1`, `DM_C2`, etc., 
+with raw columns `C11`, `C12`, etc.¦
+
+### 4.2 Optional sheet: `Alternatives`
+
+| Column | Description |
+|--------|-------------|
+| `Alternative` | Names of alternatives, *one per row* (order defines canonical alignment). |
+
+If present, *every* decision matrix (`DM_*`) and propagated scores must include *all* listed alternatives; missing names cause an error.
+
+If omitted, alternatives are *inferred* from the data (e.g. first `DM` encountered).
+
+### 4.3 Optional sheet: `CriterionTypes`
+
+| Column | Description |
+|--------|-------------|
+| `Holon` | Holon that owns the criterion. |
+| `Criterion` | Criterion name (must match `Structure` / `DM` / `AHP`). |
+| `Type` | `1` = *benefit* (higher is better), `-1` = *cost* (lower is better). |
+
+Rows not listed default to *`default_criterion_type`* in the Python constructor (typically `1` = benefit).
+
+### 4.4 Required sheets: `AHP_<HolonName>`
+
+For each holon that is evaluated, there must be a sheet named exactly:
+
+`AHP_<HolonName>`
+
+Examples: `AHP_Main`, `AHP_C1`.
+
+The matrix must be *square* with size equal to the *number of criteria* listed for that holon in `Structure`, in that same order.
+
+**Two accepted formats:**
+
+1. *Plain numeric block:* first \(n \times n\) cells are numeric (no labels required).
+2. *Labeled:* first row and column contain criterion names; the reader reorders rows/columns to match `Structure`. Missing labels produce an error.
+
+Pairwise values are passed to *pyDecision* `ahp_method` with `wd` equal to `ahp_weight_derivation` (e.g. `"max_eigen"`).
+
+### 4.5 Sheets: `DM_<HolonName>` (where needed)
+
+For each holon that has **raw/direct** criteria, provide:
+
+`DM_<HolonName>`
+
+- First column: `Alternative` (recommended) or any first column used as alternative labels.
+- Other columns: numeric values for each *raw* criterion declared in `Structure` for that holon.
+
+*Parent holons* whose criteria are *only* child holons do *not* need a `DM_*` sheet.
+
+All values must be numeric (non-numeric cells raise an error when reading).
+
+---
+
+## 5. Running the analysis
+
+### 5.1 Configure the example runner
+
+Edit `RUN_matperiw_MCDM_holacratic.py`:
+
+1. Set `excel_path` to your *input* `.xlsx` workbook. The bundled example script defaults to `matperiw_holacratic_brand_sustainability_input.xlsx` 
+  (you must create or supply this file).
+2. Optionally change `export_results(...)` in the same file (default example output: `matperiw_holacratic_brand_sustainability_results.xlsx`).
+3. Optionally adjust:
+   - `structure_sheet`, `alternatives_sheet`, `criterion_types_sheet` if you rename sheets.
+   - `ahp_weight_derivation` (e.g. `"max_eigen"`).
+   - `cr_threshold` (default **0.10** for AHP consistency ratio).
+   - `default_criterion_type` (default **1**).
+
+### 5.2 Execute
+
+From the project folder:
+
+```bash
+python RUN_matperiw_MCDM_holacratic.py
+```
+
+Or use the API from your own script (see Section 6).
+
+---
+
+## 6. Python API (short reference)
+
+### 6.1 Main class: `HolacraticMatperiwMCDM`
+
+```python
+from MATPERIW_HOLACRATIC import HolacraticMatperiwMCDM, plot_final_ranking
+
+model = HolacraticMatperiwMCDM(
+    excel_path="your_input.xlsx",
+    structure_sheet="Structure",
+    alternatives_sheet="Alternatives",
+    criterion_types_sheet="CriterionTypes",
+    ahp_weight_derivation="max_eigen",
+    cr_threshold=0.10,
+    default_criterion_type=1,
+)
+
+output = model.run()
+model.print_final_results()
+model.export_results("your_output.xlsx")
+plot_final_ranking(output["final_result"]["ranking_table"])
+```
+
+**`run()` returns** a dictionary with:
+
+- `"root_holon"`: name of the root.
+- `"final_result"`: full result dict for the root (ranking, weights, matrices, â€¦).
+- `"all_holon_results"`: cached results for every evaluated holon.
+
+### 6.2 Useful functions (flat / programmatic use)
+
+In `MATPERIW_HOLACRATIC.py`:
+
+- `evaluate_single_holon(...)` ” run MATPERIW on one decision matrix with optional `criterion_is_raw` flags.
+- `compute_ahp_weights`, `compute_entropy_weights`, `normalize_decision_matrix`, `build_interaction_matrix`,
+   `compute_permanent_scores`, `create_ranking_table` ” lower-level building blocks.
+
+---
+
+## 7. Understanding the results
+
+### 7.1 Console (`print_final_results`)
+
+- *Final ranking table* for the root holon: `Rank`, `Alternative`, `Permanent Score`.
+- *AHP consistency summary* per holon: consistency ratio (CR) and `OK` vs `REVIEW` relative to `cr_threshold`.
+
+### 7.2 Exported Excel (`export_results`)
+
+Workbook structure (sheet names shortened to Excel's *31-character* limit; invalid characters replaced):
+
+| Sheet pattern | Content |
+|---------------|---------|
+| `Summary` | Per holon: parent, criteria lists, raw vs propagated criteria, AHP CR, consistency flag. |
+| `Final_Ranking` | Root ranking table. |
+| `R_<Holon>` | Ranking for that holon. |
+| `DM_<Holon>` | Local decision matrix used (raw + propagated columns). |
+| `N_<Holon>` | Normalized/carried matrix (raw columns normalized; propagated as-is). |
+| `Diag_<Holon>` | Diagonal score matrix (entropy Ã— normalized for raw; propagated scores for children). |
+| `Beta_<Holon>` | Interaction matrix \(\beta\) from AHP weights. |
+| `W_<Holon>` | Weights table: source, type, AHP weight, entropy weight (`NaN` for propagated), effective objective multiplier. |
+
+---
+
+## 8. Method summary (for interpretation)
+
+1. *Subjective weights:* From each holon's pairwise matrix via AHP; built into interaction matrix \(\beta_{jk} = w_j / (w_j + w_k)\), \(\beta_{jj} = 1\).
+2. *Objective weights:* Entropy method on *raw* columns only; *propagated* columns get multiplier `1` on the diagonal.
+3. *Diagonal for alternative \(i\):* For raw criterion \(j\), typically (normalized value) \(\times\) (entropy weight); for propagated, the *carried permanent score*.
+4. *Score:* For each alternative, the *permanent* of the matrix with \(\beta\) off-diagonal and these diagonal entries is computed (SymPy `Matrix.per()`).
+5. *Ranking:* Alternatives sorted by permanent score *descending*.
+
+---
+
+## 9. Troubleshooting
+
+| Issue | What to check |
+|-------|----------------|
+| `Excel file not found` | Path in `excel_path`; run from correct directory or use absolute path. |
+| Root holon error | Exactly one row with empty `Parent` in `Structure`. |
+| Missing `AHP_<Holon>` | Sheet name and holon name must match; matrix size = number of criteria. |
+| Missing criterion / DM | Raw criteria must appear in `DM_<Holon>`; child holons must be defined in `Structure`. |
+| Alternatives mismatch | If `Alternatives` sheet exists, every `DM_*` must list all of them. |
+| AHP labels error | Labeled AHP sheets must include every criterion name in row and column. |
+| CR always `REVIEW` | Revise pairwise judgments or lower `cr_threshold` only if methodologically justified. |
+
+---
+
+## 10. Academic / attribution
+
+When reporting or publishing results, cite the **Holacratic MATPERIW-MCDM** method and tooling appropriately per your institution's rules 
+and any accompanying paper referenced by the author. The implementation header in `MATPERIW_HOLACRATIC.py` states authorship and date.
+
+---
+Prof. Dr. Adil Baykasoglu ©, May 16, 2026; İzmir, Türkiye
+*End of user manual.*
